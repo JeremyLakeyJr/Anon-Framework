@@ -1,5 +1,8 @@
 import socket
 import socks
+import threading
+import sys
+from .menu import Menu
 
 class IRCClient:
     """
@@ -13,6 +16,10 @@ class IRCClient:
         self.use_tor = use_tor
         self.socket = None
         self.is_connected = False
+        self.identities = {}
+        self.lock = threading.Lock()
+        self.menu = Menu(self)
+        self.receive_thread = None
 
     def connect(self):
         """
@@ -30,8 +37,11 @@ class IRCClient:
             self.is_connected = True
             self.send_command(f"NICK {self.nickname}")
             self.send_command(f"USER {self.nickname} 0 * :{self.nickname}")
-            self.send_command(f"JOIN {self.channel}")
-            print(f"Connected to {self.server} and joined {self.channel}")
+            self.join_channel(self.channel)
+            print(f"Connected to {self.server}")
+            self.receive_thread = threading.Thread(target=self.receive_messages)
+            self.receive_thread.daemon = True
+            self.receive_thread.start()
         except Exception as e:
             print(f"Error connecting to IRC server: {e}")
             self.disconnect()
@@ -51,13 +61,105 @@ class IRCClient:
         Sends a command to the IRC server.
         """
         if self.socket and self.is_connected:
-            self.socket.send(f"{command}\r\n".encode("utf-8"))
+            try:
+                self.socket.send(f"{command}\r\n".encode("utf-8"))
+            except (BrokenPipeError, OSError) as e:
+                print(f"Connection error: {e}")
+                self.disconnect()
 
     def send_message(self, message):
         """
         Sends a message to the channel.
         """
         self.send_command(f"PRIVMSG {self.channel} :{message}")
+
+    def list_channels(self):
+        """Lists all channels on the server."""
+        self.send_command("LIST")
+        print("Requesting channel list from server...")
+
+    def search_channels(self, query):
+        """Searches for channels matching the query."""
+        self.send_command(f"LIST *{query}*")
+        print(f"Searching for channels matching '{query}'...")
+
+    def join_channel(self, channel):
+        """Joins a new channel."""
+        if self.channel:
+            self.leave_channel()
+        if not channel.startswith("#"):
+            channel = "#" + channel
+        self.channel = channel
+        self.send_command(f"JOIN {self.channel}")
+        print(f"Joined {self.channel}")
+
+    def leave_channel(self):
+        """Leaves the current channel."""
+        self.send_command(f"PART {self.channel}")
+        print(f"Left {self.channel}")
+        self.channel = None
+
+    def switch_server(self, server, port):
+        """Switches to a new server."""
+        self.disconnect()
+        self.server = server
+        self.port = port
+        self.connect()
+
+    def change_nickname(self, nickname):
+        """Changes the nickname."""
+        self.nickname = nickname
+        self.send_command(f"NICK {self.nickname}")
+
+    def save_identity(self, name):
+        """Saves the current connection details as an identity."""
+        self.identities[name] = {
+            "server": self.server,
+            "port": self.port,
+            "nickname": self.nickname,
+            "channel": self.channel,
+        }
+        print(f"Identity '{name}' saved.")
+
+    def load_identity(self):
+        """Loads a saved identity."""
+        if not self.identities:
+            print("No identities saved.")
+            return
+
+        print("Saved identities:")
+        for name in self.identities:
+            print(f"- {name}")
+        
+        name = input("Enter identity name to load: ")
+        identity = self.identities.get(name)
+        if identity:
+            self.disconnect()
+            self.server = identity["server"]
+            self.port = identity["port"]
+            self.nickname = identity["nickname"]
+            self.channel = identity["channel"]
+            self.connect()
+        else:
+            print("Invalid identity name.")
+
+    def receive_messages(self):
+        """Receives and prints messages from the server."""
+        while self.is_connected:
+            try:
+                response = self.socket.recv(2048).decode("utf-8")
+                if response:
+                    with self.lock:
+                        sys.stdout.write(response)
+                        sys.stdout.flush()
+                        # Respond to PING requests
+                        if response.startswith("PING"):
+                            self.send_command(f"PONG {response.split(':')[1]}")
+            except Exception as e:
+                with self.lock:
+                    print(f"Error receiving message: {e}")
+                self.disconnect()
+                break
 
     def start(self):
         """
@@ -66,18 +168,21 @@ class IRCClient:
         if not self.is_connected:
             self.connect()
 
-        while self.is_connected:
-            try:
-                response = self.socket.recv(2048).decode("utf-8")
-                if response:
-                    print(response, end='')
-                    # Respond to PING requests
-                    if response.startswith("PING"):
-                        self.send_command(f"PONG {response.split(':')[1]}")
-            except Exception as e:
-                print(f"Error receiving message: {e}")
-                self.disconnect()
-                break
+        try:
+            while self.is_connected:
+                with self.lock:
+                    self.menu.display_menu()
+                
+                choice = input("Enter your choice: ")
+                with self.lock:
+                    self.menu.handle_choice(choice)
+
+        except KeyboardInterrupt:
+            print("\nDisconnecting...")
+            self.disconnect()
+        except EOFError:
+            print("\nDisconnecting...")
+            self.disconnect()
 
 def main():
     """
