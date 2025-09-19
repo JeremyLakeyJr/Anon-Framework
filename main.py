@@ -6,8 +6,6 @@ from anon_framework.vpn.tor import TorVPN
 from anon_framework.services.qbittorrent import QBittorrentClient
 from anon_framework.services.i2p import I2PService
 from anon_framework.privacy.telemetry import disable_telemetry
-from anon_framework.services.communication.irc import IRCClient
-from anon_framework.utils.helpers import run_command
 
 def handle_vpn_command(args):
     """Handles all VPN-related commands."""
@@ -68,31 +66,8 @@ def handle_privacy_command(args):
     """Handles all privacy-related commands."""
     if args.privacy_action == 'disable-telemetry':
         disable_telemetry()
-    elif args.privacy_action == 'start-tor':
-        print("Starting Tor service...")
-        stdout, stderr, code = run_command(['sudo', 'systemctl', 'start', 'tor'])
-        if code == 0:
-            print("Tor service started successfully.")
-        else:
-            print(f"Error starting Tor service:\n{stderr}")
-    elif args.privacy_action == 'stop-tor':
-        print("Stopping Tor service...")
-        stdout, stderr, code = run_command(['sudo', 'systemctl', 'stop', 'tor'])
-        if code == 0:
-            print("Tor service stopped successfully.")
-        else:
-            print(f"Error stopping Tor service:\n{stderr}")
     else:
         print(f"Error: Invalid privacy action '{args.privacy_action}'.")
-        sys.exit(1)
-
-def handle_communicate_command(args):
-    """Handles all communication-related commands."""
-    if args.protocol == 'irc':
-        client = IRCClient(args.server, args.port, args.nickname, args.channel, use_tor=args.tor)
-        client.start()
-    else:
-        print(f"Error: Invalid communication protocol '{args.protocol}'.")
         sys.exit(1)
 
 def main():
@@ -117,18 +92,8 @@ def main():
 
     # Privacy Parser
     privacy_parser = subparsers.add_parser('privacy', help='Manage privacy settings')
-    privacy_parser.add_argument('privacy_action', choices=['disable-telemetry', 'start-tor', 'stop-tor'], help='Action to perform')
+    privacy_parser.add_argument('privacy_action', choices=['disable-telemetry'], help='Action to perform')
     privacy_parser.set_defaults(func=handle_privacy_command)
-
-    # Communication Parser
-    communicate_parser = subparsers.add_parser('communicate', help='Manage communication clients')
-    communicate_parser.add_argument('protocol', choices=['irc'], help='The communication protocol')
-    communicate_parser.add_argument('--server', default='irc.libera.chat', help='The server address')
-    communicate_parser.add_argument('--port', type=int, default=6667, help='The server port')
-    communicate_parser.add_argument('--nickname', default='anon_framework_user', help='Your nickname')
-    communicate_parser.add_argument('--channel', default='#anon-framework', help='The channel to join')
-    communicate_parser.add_argument('--tor', action='store_true', help='Use Tor for the connection')
-    communicate_parser.set_defaults(func=handle_communicate_command)
 
     args = parser.parse_args()
     args.func(args)

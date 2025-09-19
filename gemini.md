@@ -2,7 +2,7 @@
 
 ## 1. Project Goal
 
-To create a cross-platform framework for enhancing user anonymity and privacy. The framework will provide tools to manage VPNs, handle services like I2P and qBittorrent, and reduce OS-level telemetry.
+To create a cross-platform framework for enhancing user anonymity and privacy. The framework will provide tools to manage VPNs, handle services like I2P and qBittorrent, reduce OS-level telemetry, and provide secure communication channels.
 
 ## 2. Core Technology
 
@@ -35,7 +35,10 @@ A modular structure will be used to keep the codebase organized and maintainable
 │   │   ├───__init__.py
 │   │   ├───i2p.py                # I2P router management
 │   │   ├───qbittorrent.py        # qBittorrent API client
-│   │   └───tor_browser.py        # Tor Browser launcher
+│   │   ├───tor_browser.py        # Tor Browser launcher
+│   │   └───communication/        # Communication clients
+│   │       ├───__init__.py
+│   │       └───irc.py            # IRC client
 │   │
 │   └───utils/                    # Utility functions
 │       ├───__init__.py
@@ -59,8 +62,10 @@ A modular structure will be used to keep the codebase organized and maintainable
 - **Service Integration:**
     - **I2P & Tor Browser:** The framework will manage the lifecycle of these applications (start, stop, configure).
     - **qBittorrent:** Interact with the qBittorrent web API to manage torrents and settings.
+- **Communication:**
+    - **IRC:** A basic IRC client with optional Tor integration for anonymous communication.
 
-## 5. Progress (As of 2025-09-17)
+## 5. Progress (As of 2025-09-18)
 
 - **Project Scaffolding:**
     - The complete directory structure has been created.
@@ -77,13 +82,17 @@ A modular structure will be used to keep the codebase organized and maintainable
     - **`anon_framework/privacy/telemetry.py`:** Created the initial structure with placeholder functions to disable telemetry on Windows, Linux, and macOS.
     - **`anon_framework/services/qbittorrent.py`:** Implemented a client for the qBittorrent Web API, including search functionality.
     - **`anon_framework/services/i2p.py`:** Implemented a manager for the I2P service and added a placeholder for I2P-based torrent searching.
+    - **`anon_framework/services/communication/irc.py`:** Implemented a basic IRC client with Tor support.
 
 - **CLI Integration:**
     - **`anon_framework/main.py`:** The main entry point has been significantly updated with a robust argument parser (`argparse`) to handle sub-commands for the VPN, services, and privacy modules. The implemented modules are now executable from the command line.
+    - **`communicate` command:** Added a `communicate` command to manage communication clients, starting with an IRC client.
+    - **Tor Service Management:** Added `start-tor` and `stop-tor` commands to the `privacy` module to manage the system's Tor service.
 
 ## 6. Next Steps
 
 1.  Flesh out the OS-specific logic in `privacy/telemetry.py`.
 2.  Implement the `tor_browser.py` module to manage the Tor Browser lifecycle.
 3.  Develop a configuration system in `config.py` to handle settings like qBittorrent credentials.
-4.  Add comprehensive unit and integration tests.
+4.  Add more secure communication protocols (e.g., Ricochet-IM, Tox).
+5.  Add comprehensive unit and integration tests.
