@@ -21,7 +21,7 @@ class IRCClient(pydle.Client):
     """
     def __init__(self, nickname, channel, use_tor=False):
         # We need to manually construct the feature list to include our patch.
-        features = pydle.FeatureSet(
+        features = pydle.features.FeatureSet(
             pydle.features.rfc1459.RFC1459Support,
             pydle.features.ctcp.CTCPSupport,
             PatchedTLSSupport  # Use our patched TLS class
