@@ -2,6 +2,7 @@ import asyncio
 import sys
 import threading
 import ssl
+import traceback
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
 import pydle
@@ -205,6 +206,9 @@ class IRCClient(pydle.Client):
             await self.run_forever()
         except Exception as e:
             print(f"Failed to connect: {e}")
+            print("\n--- DETAILED ERROR ---")
+            traceback.print_exc()
+            print("----------------------\n")
         finally:
             try:
                 loop = asyncio.get_running_loop()
