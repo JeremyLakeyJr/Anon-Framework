@@ -26,6 +26,7 @@ class IRCClient:
         
         self.reactor = irc.client.Reactor()
         self.connection = None
+        self.reactor_running = False
 
     def on_welcome(self, connection, event):
         """Called when the server sends the initial welcome message."""
@@ -124,7 +125,7 @@ class IRCClient:
         while not self.is_connected:
             threading.Event().wait(0.5)
             # If the reactor stops before connecting, exit the loop.
-            if not self.reactor.is_running():
+            if not self.reactor_running:
                 return
 
         try:
@@ -195,5 +196,9 @@ class IRCClient:
         menu_thread.start()
 
         print(f"Connecting to {self.server}:{self.port}...")
-        self.reactor.process_forever()
+        try:
+            self.reactor_running = True
+            self.reactor.process_forever()
+        finally:
+            self.reactor_running = False
 
