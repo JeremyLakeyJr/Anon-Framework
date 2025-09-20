@@ -45,6 +45,9 @@ class IRCClient(pydle.Client):
         self.is_connected = False
         self.identities = {}
         
+        # Create a synchronization event to signal disconnection.
+        self._disconnected_event = asyncio.Event()
+
         # Set encoding properties correctly on initialization.
         self.encoding = 'utf-8'
         self._fallback_encodings = ['latin-1', 'cp1252']
@@ -55,6 +58,8 @@ class IRCClient(pydle.Client):
         await super().on_connect()
         print(f"Successfully connected to {self.connection.hostname}.")
         self.is_connected = True
+        # Clear the event in case of reconnects.
+        self._disconnected_event.clear()
         if self.target_channel:
             print(f"Joining channel {self.target_channel}...")
             await self.join(self.target_channel)
@@ -84,6 +89,8 @@ class IRCClient(pydle.Client):
         await super().on_disconnect(expected)
         print("\nDisconnected from server.")
         self.is_connected = False
+        # Signal that the client has disconnected.
+        self._disconnected_event.set()
 
 
     def send_message(self, message):
@@ -207,8 +214,8 @@ class IRCClient(pydle.Client):
                 tls_verify=False # For simplicity
             )
             # The library handles message processing in the background.
-            # We just need to wait for the client to disconnect.
-            await self.disconnected.wait()
+            # We just need to wait for our disconnection event to be set.
+            await self._disconnected_event.wait()
         except Exception as e:
             print(f"Failed to connect: {e}")
             print("\n--- DETAILED ERROR ---")
