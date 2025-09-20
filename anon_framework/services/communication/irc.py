@@ -160,7 +160,9 @@ class IRCClient:
         connect_factory = irc.connection.Factory()
         if ssl_enabled:
             context = ssl.create_default_context()
-            connect_factory = irc.connection.Factory(wrapper=context.wrap_socket)
+            # This lambda function ensures the server_hostname is passed for verification
+            ssl_wrapper = lambda sock: context.wrap_socket(sock, server_hostname=self.server)
+            connect_factory = irc.connection.Factory(wrapper=ssl_wrapper)
 
         if self.use_tor:
             print("Connecting to IRC via Tor...")
