@@ -150,11 +150,15 @@ class IRCClient:
                     break
 
                 if message == '/menu':
-                    self.menu.display_menu()
-                    choice = input("Enter your choice: ")
-                    self.menu.handle_choice(choice)
-                    # After menu interaction, reset the current menu to main
-                    self.menu.current_menu = "main"
+                    self.menu.current_menu = "main"  # Reset to main menu
+                    # Start a loop to handle menu navigation
+                    while self.is_connected:
+                        self.menu.display_menu()
+                        choice = input("Enter your choice: ")
+                        # handle_choice will return False when the user wants to exit the menu
+                        if not self.menu.handle_choice(choice):
+                            print("\n--- Exited menu. You are back in the channel. ---")
+                            break
                 elif message.startswith('/'):
                     print(f"Unknown command: '{message}'. Did you mean /menu?")
                 else:
