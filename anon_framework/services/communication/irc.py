@@ -8,22 +8,26 @@ import socks
 import socket
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
+from jaraco.stream.buffer import LineBuffer
 
-class CustomServerConnection(irc.client.ServerConnection):
+class FallbackLineBuffer(LineBuffer):
     """
-    A custom server connection class that modifies the buffer's error
-    handling and default encoding to prevent crashes on Unicode decode errors.
+    A custom LineBuffer class that is hardcoded to use a fallback encoding
+    ('latin-1') and error handling ('replace'). This is a robust way to
+    prevent UnicodeDecodeError crashes, as latin-1 can represent any byte value.
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Forcibly change the encoding to a fallback that won't crash on
-        # invalid byte sequences. latin-1 can represent any byte value,
-        # prioritizing stability over perfect character representation.
-        self.buffer.encoding = 'latin-1'
-        # Set the error handling policy to 'replace' as a secondary measure,
-        # which will insert a placeholder for any character that still
-        # can't be rendered.
-        self.buffer.errors = 'replace'
+        self.encoding = 'latin-1'
+        self.errors = 'replace'
+
+class CustomServerConnection(irc.client.ServerConnection):
+    """
+    A custom server connection that tells the IRC client to use our
+    FallbackLineBuffer, ensuring all incoming data is handled with a
+    crash-resistant decoding strategy.
+    """
+    buffer_class = FallbackLineBuffer
 
 class IRCClient:
     """
