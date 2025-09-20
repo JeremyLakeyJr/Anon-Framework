@@ -10,15 +10,16 @@ from pydle.features.tls import TLSSupport
 # This is a workaround for a bug in pydle where TLS and proxy arguments conflict.
 # We are "monkey-patching" the library by replacing the original problematic
 # method with our corrected version before the client starts.
-_original_connect_tls = TLSSupport._connect_tls
+_original_connect = TLSSupport._connect
 
-async def _patched_connect_tls(self, hostname, port, tls_verify=True, **kwargs):
-    """A patched version that removes the conflicting 'proxy' argument."""
-    kwargs.pop('proxy', None)
-    return await _original_connect_tls(self, hostname, port, tls_verify=tls_verify, **kwargs)
+async def _patched_connect(self, hostname, port, **kwargs):
+    """A patched version that removes the conflicting 'proxy' argument for TLS connections."""
+    if self.tls:
+        kwargs.pop('proxy', None)
+    return await _original_connect(self, hostname, port, **kwargs)
 
 # Apply the patch
-TLSSupport._connect_tls = _patched_connect_tls
+TLSSupport._connect = _patched_connect
 
 
 # By patching the library, we can now inherit from the standard pydle.Client
