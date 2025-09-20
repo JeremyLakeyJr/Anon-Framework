@@ -1,7 +1,6 @@
 import irc.client
 import irc.connection
 import irc.strings
-from jaraco.stream import buffer as stream_buffer
 import threading
 import sys
 import ssl
@@ -10,18 +9,18 @@ import socket
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
 
-class RobustBuffer(stream_buffer.LineBuffer):
-    """A line buffer that replaces decoding errors instead of crashing."""
-    def __init__(self, *args, **kwargs):
-        # Force 'replace' as the error handling strategy upon initialization.
-        kwargs['errors'] = 'replace'
-        super().__init__(*args, **kwargs)
-
 class CustomServerConnection(irc.client.ServerConnection):
     """
-    A server connection that uses our RobustBuffer to handle decoding errors.
+    A custom server connection class that modifies the buffer's error
+    handling to prevent crashes on Unicode decode errors.
     """
-    buffer_class = RobustBuffer
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # The buffer object is created in the superclass constructor.
+        # We directly modify its error handling policy from 'strict' to 'replace'
+        # to prevent crashes on invalid byte sequences. This is a more
+        # direct and reliable method than subclassing the buffer.
+        self.buffer.errors = 'replace'
 
 class IRCClient:
     """
