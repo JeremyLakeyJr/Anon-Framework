@@ -1,40 +1,40 @@
 import asyncio
 import sys
 import threading
-import ssl
 import traceback
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
 import pydle
 from pydle.features.tls import TLSSupport
 
-# This is a workaround for a bug in pydle where TLS and proxy arguments conflict.
-# We are "monkey-patching" the library by replacing the original problematic
-# method with our corrected version before the client starts.
-_original_connect = TLSSupport._connect
-
-async def _patched_connect(self, hostname, port, **kwargs):
+class PatchedTLSSupport(TLSSupport):
     """
-    A patched version that checks the kwargs for TLS status and removes the
-    conflicting 'proxy' argument for TLS connections.
+    An overridden version of pydle's TLSSupport that handles a bug where
+    TLS and proxy arguments conflict during connection.
     """
-    if kwargs.get('tls'):
-        kwargs.pop('proxy', None)
-    
-    return await _original_connect(self, hostname, port, **kwargs)
+    async def _connect(self, hostname, port, **kwargs):
+        """
+        A patched version that checks the kwargs for TLS status and removes the
+        conflicting 'proxy' argument before passing it to the original TLS
+        connection logic.
+        """
+        if kwargs.get('tls'):
+            # When establishing a TLS connection, the proxy argument is not needed
+            # at this layer and can cause conflicts.
+            kwargs.pop('proxy', None)
+        
+        # Call the original _connect method from the parent class (TLSSupport)
+        return await super()._connect(hostname, port, **kwargs)
 
-# Apply the patch
-TLSSupport._connect = _patched_connect
-
-
-# By patching the library, we can now inherit from the standard pydle.Client
-# without causing a Method Resolution Order (MRO) error.
 class IRCClient(pydle.Client):
     """
     An IRC client rebuilt using the 'pydle' library for modern,
-    asynchronous, and robust communication.
+    asynchronous, and robust communication. This client inherits our patched
+    TLS support to ensure compatibility with Tor/proxy connections.
     """
     def __init__(self, nickname, channel, use_tor=False):
+        # By inheriting from our PatchedTLSSupport, we get all the standard
+        # features plus our specific connection fix.
         super().__init__(nickname, realname='Anon-Framework User')
         
         self.target_channel = channel
@@ -217,7 +217,10 @@ class IRCClient(pydle.Client):
 
         print(f"Connecting to {host}:{port}...")
         try:
-            await self.connect(
+            # We instantiate our patched client here.
+            client_instance = IRCClient(self.nickname, self.target_channel)
+            
+            await client_instance.connect(
                 hostname=host,
                 port=port,
                 tls=ssl,
@@ -226,7 +229,7 @@ class IRCClient(pydle.Client):
             )
             # The library handles message processing in the background.
             # We just need to wait for our disconnection event to be set.
-            await self._disconnected_event.wait()
+            await client_instance._disconnected_event.wait()
         except Exception as e:
             print(f"Failed to connect: {e}")
             print("\n--- DETAILED ERROR ---")
