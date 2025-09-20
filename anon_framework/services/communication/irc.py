@@ -18,17 +18,10 @@ async def _patched_connect(self, hostname, port, **kwargs):
     A patched version that checks the kwargs for TLS status and removes the
     conflicting 'proxy' argument for TLS connections.
     """
-    print("[Debug] Entering patched connect method...")
-    # The 'tls' flag is passed in kwargs, not set as a property on `self`
-    # at this stage of the connection.
     if kwargs.get('tls'):
-        print("[Debug] TLS connection detected, removing proxy from kwargs for TLS layer.")
         kwargs.pop('proxy', None)
     
-    print("[Debug] Calling original connect method...")
-    result = await _original_connect(self, hostname, port, **kwargs)
-    print("[Debug] Original connect method returned.")
-    return result
+    return await _original_connect(self, hostname, port, **kwargs)
 
 # Apply the patch
 TLSSupport._connect = _patched_connect
@@ -58,10 +51,20 @@ class IRCClient(pydle.Client):
         self.encoding = 'utf-8'
         self._fallback_encodings = ['latin-1', 'cp1252']
 
+    async def on_raw_motd(self, message):
+        """Called for each line of the Message of the Day."""
+        print(message)
+
+    async def on_unknown(self, message):
+        """Called for any server message that doesn't have a specific handler."""
+        # This prevents raw numerics from looking like an error.
+        print(f"[Server] {message.raw}")
 
     async def on_connect(self):
         """Called when the client has successfully connected to the server."""
         await super().on_connect()
+        # Get a reference to the event loop for threadsafe operations.
+        self.loop = asyncio.get_running_loop()
         print(f"Successfully connected to {self.connection.hostname}.")
         self.is_connected = True
         # Clear the event in case of reconnects.
@@ -212,7 +215,6 @@ class IRCClient(pydle.Client):
 
         print(f"Connecting to {host}:{port}...")
         try:
-            print("[Debug] About to await self.connect...")
             await self.connect(
                 hostname=host,
                 port=port,
@@ -220,11 +222,9 @@ class IRCClient(pydle.Client):
                 proxy=proxy,
                 tls_verify=False # For simplicity
             )
-            print("[Debug] self.connect returned. Awaiting disconnection event...")
             # The library handles message processing in the background.
             # We just need to wait for our disconnection event to be set.
             await self._disconnected_event.wait()
-            print("[Debug] Disconnection event received.")
         except Exception as e:
             print(f"Failed to connect: {e}")
             print("\n--- DETAILED ERROR ---")
