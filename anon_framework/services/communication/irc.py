@@ -166,6 +166,10 @@ class IRCClient:
 
     def start(self):
         """Starts the IRC client, including server selection and connection."""
+        custom_nickname = input(f"Enter your nickname (default: {self.nickname}): ").strip()
+        if custom_nickname:
+            self.nickname = custom_nickname
+            
         self.select_server()
         while True:
             try:
