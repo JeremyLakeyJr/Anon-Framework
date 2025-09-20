@@ -1,158 +1,118 @@
-import pydle
 import asyncio
 import sys
 import threading
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
+import pydle
 
-class PydleBot(pydle.Client):
+class IRCClient(pydle.Client):
     """
-    The underlying Pydle client implementation. This class handles the
-    raw IRC protocol events and calls back to the main IRCClient class.
-    """
-    def __init__(self, nickname, realname, event_handler):
-        super().__init__(nickname, realname=realname, eventloop=event_handler.loop)
-        self.event_handler = event_handler
-
-    async def on_connect(self):
-        await super().on_connect()
-        await self.event_handler.on_welcome()
-
-    async def on_channel_message(self, channel, nickname, message):
-        await self.event_handler.on_pubmsg(nickname, message)
-
-    async def on_nickname_in_use(self, nickname):
-        # Pydle automatically tries another nick, but we can log it.
-        new_nickname = await super().on_nickname_in_use(nickname)
-        await self.event_handler.on_nicknameinuse(nickname, new_nickname)
-
-    async def on_raw_motd(self, message):
-        # The MOTD is split into parts; this handles each part.
-        await self.event_handler.on_server_message(message)
-
-    async def on_list_item(self, channel, user_count, topic):
-        await self.event_handler.on_list(channel, user_count, topic)
-    
-    async def on_list_end(self, channel):
-        await self.event_handler.on_listend()
-
-class IRCClient:
-    """
-    Manages the IRC client state and user interaction. This is a wrapper
-    around the PydleBot to separate application logic from protocol logic.
+    An IRC client rebuilt using the 'pydle' library for modern,
+    asynchronous, and robust communication.
     """
     def __init__(self, nickname, channel, use_tor=False):
-        self.server = None
-        self.port = None
-        self.nickname = nickname
-        self.channel = channel
+        super().__init__(nickname, realname='Anon-Framework User')
+        self.target_channel = channel
         self.use_tor = use_tor
-        self.is_connected = False
         self.menu = Menu(self)
         self.servers = SERVERS
+        self.is_connected = False
         self.identities = {}
-        
-        self.loop = asyncio.new_event_loop()
-        self.client = PydleBot(nickname, realname='Anon-Framework User', event_handler=self)
 
-    # Event handlers called by PydleBot
-    async def on_welcome(self):
-        print(f"Successfully connected to {self.server}.")
+    async def on_connect(self):
+        """Called when the client has successfully connected to the server."""
+        await super().on_connect()
+        print(f"Successfully connected to {self.connection.hostname}.")
         self.is_connected = True
-        if self.channel:
-            print(f"Joining channel {self.channel}...")
-            await self.client.join(self.channel)
-        print("\n--- You are now in the channel. Type messages and press Enter to send. ---")
-        print("--- Type /menu to access the options menu. ---")
-    
-    async def on_nicknameinuse(self, old, new):
-        print(f"Nickname '{old}' was in use. Changed to '{new}'.")
-        self.nickname = new
+        if self.target_channel:
+            print(f"Joining channel {self.target_channel}...")
+            await self.join(self.target_channel)
 
-    async def on_pubmsg(self, nickname, message):
-        if nickname != self.client.nickname:
-            sys.stdout.write('\r' + ' ' * 80 + '\r') 
-            print(f"<{nickname}> {message}")
-            sys.stdout.write(f"[{self.channel or ''}]> ")
+    async def on_join(self, channel, user):
+        """Called when a user (including us) joins a channel."""
+        if user == self.nickname:
+            print(f"Joined {channel}. Type messages and press Enter.")
+            print("Type /menu to access options, or /raw to send a raw command.")
+
+    async def on_message(self, target, source, message):
+        """Called when a message is received in a channel or private query."""
+        if source != self.nickname:
+            sys.stdout.write('\r' + ' ' * 80 + '\r')
+            print(f"<{source}> {message}")
+            sys.stdout.write(f"[{target or ''}]> ")
             sys.stdout.flush()
 
-    async def on_server_message(self, message):
-        print(f"[Server] {message}")
+    async def on_nickname_in_use(self, nickname):
+        """Called when the desired nickname is already taken."""
+        new_nickname = nickname + '_'
+        print(f"Nickname '{nickname}' is in use. Trying '{new_nickname}'.")
+        await self.set_nickname(new_nickname)
 
-    async def on_list(self, channel, users, topic):
-        print(f"Channel: {channel}, Users: {users}, Topic: {topic}")
+    async def on_disconnect(self, expected):
+        """Called when the client disconnects from the server."""
+        print("\nDisconnected from server.")
+        self.is_connected = False
+        # To ensure the input loop also exits
+        if not self.event_loop.is_closed():
+             self.event_loop.stop()
 
-    async def on_listend(self):
-        print("--- End of channel list ---")
+    def send_message(self, message):
+        """Sends a message to the current channel, scheduled on the event loop."""
+        if self.is_connected and self.target_channel:
+            asyncio.run_coroutine_threadsafe(self.message(self.target_channel, message), self.event_loop)
+        else:
+            print("You are not in a channel.")
 
-    # User-facing action methods (can be called from input thread)
-    async def send_raw_command(self, command):
+    def send_raw_command(self, command, *args):
+        """Sends a raw command, scheduled on the event loop."""
         if self.is_connected:
-            print(f"--> {command}")
-            await self.client.raw(command)
+            print(f"--> {command} {' '.join(args)}")
+            asyncio.run_coroutine_threadsafe(self.raw(command, *args), self.event_loop)
         else:
             print("You are not connected to a server.")
 
-    async def send_message(self, message):
-        if self.is_connected and self.channel:
-            await self.client.message(self.channel, message)
-        else:
-            print("You are not in a channel. Use the menu to join one.")
-
-    async def list_channels_async(self):
-        if self.is_connected:
-            print("Requesting channel list from server...")
-            await self.client.list()
-
     def list_channels(self):
-        asyncio.run_coroutine_threadsafe(self.list_channels_async(), self.loop)
-
-    async def search_channels_async(self, query):
-        if self.is_connected:
-            print(f"Searching for channels matching '{query}'...")
-            await self.client.list(f"*{query}*")
+        # This functionality is more complex in pydle and requires handling raw numerics.
+        # For now, we'll send the raw command.
+        print("Requesting channel list...")
+        self.send_raw_command("LIST")
 
     def search_channels(self, query):
-        asyncio.run_coroutine_threadsafe(self.search_channels_async(query), self.loop)
-
-    def disconnect(self):
-        if self.is_connected:
-            print("Disconnecting...")
-            self.is_connected = False
-            asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
+        print(f"Searching for channels matching '{query}'...")
+        self.send_raw_command("LIST", f"*{query}*")
 
     def join_channel(self, channel):
         if not channel.startswith("#"):
             channel = "#" + channel
-        self.channel = channel
-        asyncio.run_coroutine_threadsafe(self.client.join(channel), self.loop)
+        self.target_channel = channel
         print(f"Joining {channel}...")
+        asyncio.run_coroutine_threadsafe(self.join(channel), self.event_loop)
 
     def leave_channel(self):
-        if self.channel:
-            asyncio.run_coroutine_threadsafe(self.client.part(self.channel), self.loop)
-            print(f"Leaving {self.channel}")
-            self.channel = None
+        if self.target_channel:
+            print(f"Leaving {self.target_channel}...")
+            asyncio.run_coroutine_threadsafe(self.part(self.target_channel), self.event_loop)
+            self.target_channel = None
 
     def change_nickname(self, nickname):
-        self.nickname = nickname
-        asyncio.run_coroutine_threadsafe(self.client.set_nickname(nickname), self.loop)
+        asyncio.run_coroutine_threadsafe(self.set_nickname(nickname), self.event_loop)
 
-    def select_server(self):
-        print("Please select a server to connect to:")
-        for i, server in enumerate(self.servers):
-            print(f"{i+1}. {server['name']} ({server['host']}:{server['port']})")
+    def disconnect(self):
+        """Schedules the disconnection on the event loop."""
+        asyncio.run_coroutine_threadsafe(super().disconnect(), self.event_loop)
 
     def input_loop(self):
-        while not self.is_connected and self.client.is_connected():
-            threading.Event().wait(0.5)
+        """The main loop for handling user input, run in a separate thread."""
+        while not self.is_connected:
+            threading.Event().wait(0.2)
 
         try:
             while self.is_connected:
-                prompt = f"[{self.channel or 'No Channel'}]> "
+                prompt = f"[{self.target_channel or 'No Channel'}]> "
                 message = input(prompt)
-                
-                if not self.is_connected: break
+
+                if not self.is_connected:
+                    break
 
                 if message == '/menu':
                     self.menu.current_menu = "main"
@@ -163,49 +123,68 @@ class IRCClient:
                             print("\n--- Exited menu. You are back in the channel. ---")
                             break
                 elif message.startswith('/raw '):
-                    command = message.split(' ', 1)[1]
-                    asyncio.run_coroutine_threadsafe(self.send_raw_command(command), self.loop)
+                    parts = message.split(' ', 1)
+                    if len(parts) > 1:
+                        self.send_raw_command(*parts[1].split(' '))
                 elif message.startswith('/'):
-                    print(f"Unknown command: '{message}'. Did you mean /menu or /raw?")
+                    print(f"Unknown command: '{message}'.")
                 else:
-                    asyncio.run_coroutine_threadsafe(self.send_message(message), self.loop)
-        except (KeyboardInterrupt, EOFError):
+                    self.send_message(message)
+        except (EOFError, KeyboardInterrupt):
+            print("\nDisconnecting...")
             self.disconnect()
+        finally:
+            if not self.event_loop.is_closed():
+                self.event_loop.stop()
 
-    def start(self):
+    async def start(self):
+        """Configures and starts the IRC client."""
         custom_nickname = input(f"Enter your nickname (default: {self.nickname}): ").strip()
         if custom_nickname:
             self.nickname = custom_nickname
-            self.client.nickname = custom_nickname
-            
-        self.select_server()
-        while True:
+
+        print("Please select a server to connect to:")
+        for i, server in enumerate(self.servers):
+            print(f"{i+1}. {server['name']} ({server['host']}:{server['port']})")
+
+        server_info = None
+        while not server_info:
             try:
                 choice = int(input("Enter your choice: "))
                 if 1 <= choice <= len(self.servers):
                     server_info = self.servers[choice - 1]
-                    self.server, self.port = server_info["host"], server_info["port"]
-                    break
-            except (ValueError, EOFError): pass
-            print("Invalid choice.")
+            except (ValueError, EOFError):
+                pass
+            if not server_info:
+                print("Invalid choice. Please try again.")
 
-        server_info = next((s for s in self.servers if s["host"] == self.server), None)
-        ssl_enabled = server_info.get("ssl", False)
+        host = server_info["host"]
+        port = server_info["port"]
+        ssl = server_info.get("ssl", False)
         
-        proxy = pydle.protocol.SOCKS5Proxy('127.0.0.1', 9050) if self.use_tor else None
-        
+        proxy = None
+        if self.use_tor:
+            print("Configuring connection via Tor...")
+            proxy = pydle.protocol.SOCKS5Proxy('127.0.0.1', 9050)
+
+        # pydle uses its own event loop.
+        # We run our blocking input() in a separate thread.
         input_thread = threading.Thread(target=self.input_loop, daemon=True)
         input_thread.start()
 
-        async def run_client():
-            try:
-                await self.client.connect(
-                    hostname=self.server, port=self.port,
-                    tls=ssl_enabled, tls_verify=False, # tls_verify=False for simplicity
-                    proxy=proxy
-                )
-            except Exception as e:
-                print(f"Failed to connect: {e}")
-        
-        print(f"Connecting to {self.server}:{self.port}...")
-        self.loop.run_until_complete(run_client())
+        print(f"Connecting to {host}:{port}...")
+        try:
+            await self.connect(
+                hostname=host,
+                port=port,
+                tls=ssl,
+                proxy=proxy,
+                # pydle has better encoding detection, but we can set fallbacks.
+                encoding='utf-8',
+                fallback_encodings=['latin-1', 'cp1252']
+            )
+        except Exception as e:
+            print(f"Failed to connect: {e}")
+            if not self.event_loop.is_closed():
+                self.event_loop.stop()
+
