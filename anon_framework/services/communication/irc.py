@@ -210,7 +210,8 @@ class IRCClient:
                 server=self.server,
                 port=self.port,
                 nickname=self.nickname,
-                connect_factory=connect_factory
+                connect_factory=connect_factory,
+                fallback_encoding='latin-1'
             )
         except irc.client.ServerConnectionError as x:
             print(f"Error connecting to server: {x}")
