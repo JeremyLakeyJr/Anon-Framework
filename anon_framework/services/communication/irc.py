@@ -1,37 +1,45 @@
-import irc.client
-import irc.connection
-import irc.strings
-import threading
+import pydle
+import asyncio
 import sys
-import ssl
-import socks
-import socket
+import threading
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
-from jaraco.stream.buffer import LineBuffer
 
-class FallbackLineBuffer(LineBuffer):
+class PydleBot(pydle.Client):
     """
-    A custom LineBuffer class that is hardcoded to use a fallback encoding
-    ('latin-1') and error handling ('replace'). This is a robust way to
-    prevent UnicodeDecodeError crashes, as latin-1 can represent any byte value.
+    The underlying Pydle client implementation. This class handles the
+    raw IRC protocol events and calls back to the main IRCClient class.
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.encoding = 'latin-1'
-        self.errors = 'replace'
+    def __init__(self, nickname, realname, event_handler):
+        super().__init__(nickname, realname=realname, eventloop=event_handler.loop)
+        self.event_handler = event_handler
 
-class CustomServerConnection(irc.client.ServerConnection):
-    """
-    A custom server connection that tells the IRC client to use our
-    FallbackLineBuffer, ensuring all incoming data is handled with a
-    crash-resistant decoding strategy.
-    """
-    buffer_class = FallbackLineBuffer
+    async def on_connect(self):
+        await super().on_connect()
+        await self.event_handler.on_welcome()
+
+    async def on_channel_message(self, channel, nickname, message):
+        await self.event_handler.on_pubmsg(nickname, message)
+
+    async def on_nickname_in_use(self, nickname):
+        # Pydle automatically tries another nick, but we can log it.
+        new_nickname = await super().on_nickname_in_use(nickname)
+        await self.event_handler.on_nicknameinuse(nickname, new_nickname)
+
+    async def on_raw_motd(self, message):
+        # The MOTD is split into parts; this handles each part.
+        await self.event_handler.on_server_message(message)
+
+    async def on_list_item(self, channel, user_count, topic):
+        await self.event_handler.on_list(channel, user_count, topic)
+    
+    async def on_list_end(self, channel):
+        await self.event_handler.on_listend()
 
 class IRCClient:
     """
-    An IRC client using the 'irc' library with optional Tor support.
+    Manages the IRC client state and user interaction. This is a wrapper
+    around the PydleBot to separate application logic from protocol logic.
     """
     def __init__(self, nickname, channel, use_tor=False):
         self.server = None
@@ -44,148 +52,107 @@ class IRCClient:
         self.servers = SERVERS
         self.identities = {}
         
-        self.reactor = irc.client.Reactor()
-        # Use our custom connection class to handle encoding errors gracefully.
-        self.reactor.server_class = CustomServerConnection
-        self.connection = None
-        self.reactor_running = False
+        self.loop = asyncio.new_event_loop()
+        self.client = PydleBot(nickname, realname='Anon-Framework User', event_handler=self)
 
-    def on_welcome(self, connection, event):
-        """Called when the server sends the initial welcome message."""
+    # Event handlers called by PydleBot
+    async def on_welcome(self):
         print(f"Successfully connected to {self.server}.")
         self.is_connected = True
         if self.channel:
             print(f"Joining channel {self.channel}...")
-            connection.join(self.channel)
-        # This will be printed after the MOTD
-        # print("\n--- You are now in the channel. Type messages and press Enter to send. ---")
-        # print("--- Type /menu to access the options menu. ---")
+            await self.client.join(self.channel)
+        print("\n--- You are now in the channel. Type messages and press Enter to send. ---")
+        print("--- Type /menu to access the options menu. ---")
+    
+    async def on_nicknameinuse(self, old, new):
+        print(f"Nickname '{old}' was in use. Changed to '{new}'.")
+        self.nickname = new
 
-    def on_disconnect(self, connection, event):
-        """Called when disconnected from the server."""
-        print(f"\nDisconnected from server: {event.arguments[0]}")
-        self.is_connected = False
-        # This will stop the reactor.process_forever() loop
-        self.reactor.disconnect_all()
-
-    def on_nicknameinuse(self, connection, event):
-        """Called when the chosen nickname is already in use."""
-        current_nick = connection.get_nickname()
-        new_nick = current_nick + "_"
-        print(f"Nickname '{current_nick}' is already in use. Trying '{new_nick}'.")
-        connection.nick(new_nick)
-
-    def on_pubmsg(self, connection, event):
-        """Called on a public message in a channel."""
-        # We don't want to print our own messages back to ourselves.
-        if not irc.strings.are_equal(event.source.nick, connection.get_nickname()):
-            # Use carriage return to overwrite the current input line
+    async def on_pubmsg(self, nickname, message):
+        if nickname != self.client.nickname:
             sys.stdout.write('\r' + ' ' * 80 + '\r') 
-            print(f"<{event.source.nick}> {event.arguments[0]}")
-            # Reprint the input prompt
+            print(f"<{nickname}> {message}")
             sys.stdout.write(f"[{self.channel or ''}]> ")
             sys.stdout.flush()
 
-    def on_server_message(self, connection, event):
-        """Prints generic server messages, like the MOTD."""
-        if event.arguments:
-            # The second argument is usually the text content.
-            print(f"[Server] {event.arguments[-1]}")
+    async def on_server_message(self, message):
+        print(f"[Server] {message}")
 
-    def on_endofmotd(self, connection, event):
-        """Called when the MOTD has been fully received."""
-        print("\n--- You are now in the channel. Type messages and press Enter to send. ---")
-        print("--- Type /menu to access the options menu. ---")
-
-
-    def on_list(self, connection, event):
-        """Called for each item in a channel list."""
-        args = event.arguments
-        channel = args[1] if len(args) > 1 else "Unknown Channel"
-        users = args[2] if len(args) > 2 else "N/A"
-        topic = args[3] if len(args) > 3 else ""
+    async def on_list(self, channel, users, topic):
         print(f"Channel: {channel}, Users: {users}, Topic: {topic}")
 
-    def on_listend(self, connection, event):
-        """Called when the channel list is complete."""
+    async def on_listend(self):
         print("--- End of channel list ---")
 
-    def send_raw_command(self, command):
-        """Sends a raw command string to the server."""
+    # User-facing action methods (can be called from input thread)
+    async def send_raw_command(self, command):
         if self.is_connected:
             print(f"--> {command}")
-            self.connection.send_raw(command)
+            await self.client.raw(command)
         else:
             print("You are not connected to a server.")
 
-    def send_message(self, message):
-        """Sends a message to the current channel."""
+    async def send_message(self, message):
         if self.is_connected and self.channel:
-            self.connection.privmsg(self.channel, message)
+            await self.client.message(self.channel, message)
         else:
             print("You are not in a channel. Use the menu to join one.")
 
-    def list_channels(self):
-        """Requests a list of all channels from the server."""
+    async def list_channels_async(self):
         if self.is_connected:
             print("Requesting channel list from server...")
-            self.connection.list()
+            await self.client.list()
 
-    def search_channels(self, query):
-        """Searches for channels matching a query."""
+    def list_channels(self):
+        asyncio.run_coroutine_threadsafe(self.list_channels_async(), self.loop)
+
+    async def search_channels_async(self, query):
         if self.is_connected:
             print(f"Searching for channels matching '{query}'...")
-            self.connection.list([f"*{query}*"])
+            await self.client.list(f"*{query}*")
+
+    def search_channels(self, query):
+        asyncio.run_coroutine_threadsafe(self.search_channels_async(query), self.loop)
 
     def disconnect(self):
-        """Disconnects the client from the server."""
         if self.is_connected:
+            print("Disconnecting...")
             self.is_connected = False
-            self.connection.disconnect("User disconnected.")
-            self.reactor.process_once(0.1)
+            asyncio.run_coroutine_threadsafe(self.client.disconnect(), self.loop)
 
     def join_channel(self, channel):
-        """Joins a new IRC channel."""
-        if self.is_connected:
-            if not channel.startswith("#"):
-                channel = "#" + channel
-            self.channel = channel
-            self.connection.join(channel)
-            print(f"Joining {channel}...")
+        if not channel.startswith("#"):
+            channel = "#" + channel
+        self.channel = channel
+        asyncio.run_coroutine_threadsafe(self.client.join(channel), self.loop)
+        print(f"Joining {channel}...")
 
     def leave_channel(self):
-        """Leaves the current channel."""
-        if self.is_connected and self.channel:
-            self.connection.part(self.channel)
+        if self.channel:
+            asyncio.run_coroutine_threadsafe(self.client.part(self.channel), self.loop)
             print(f"Leaving {self.channel}")
             self.channel = None
 
     def change_nickname(self, nickname):
-        """Changes the client's nickname."""
-        if self.is_connected:
-            self.connection.nick(nickname)
-            self.nickname = nickname
+        self.nickname = nickname
+        asyncio.run_coroutine_threadsafe(self.client.set_nickname(nickname), self.loop)
 
     def select_server(self):
-        """Prompts the user to select a server from the list."""
         print("Please select a server to connect to:")
         for i, server in enumerate(self.servers):
             print(f"{i+1}. {server['name']} ({server['host']}:{server['port']})")
 
     def input_loop(self):
-        """The main loop for handling user input."""
-        while not self.is_connected:
+        while not self.is_connected and self.client.is_connected():
             threading.Event().wait(0.5)
-            if not self.reactor_running:
-                return
 
         try:
             while self.is_connected:
                 prompt = f"[{self.channel or 'No Channel'}]> "
                 message = input(prompt)
                 
-                if not self.is_connected:
-                    break
+                if not self.is_connected: break
 
                 if message == '/menu':
                     self.menu.current_menu = "main"
@@ -197,21 +164,19 @@ class IRCClient:
                             break
                 elif message.startswith('/raw '):
                     command = message.split(' ', 1)[1]
-                    self.send_raw_command(command)
+                    asyncio.run_coroutine_threadsafe(self.send_raw_command(command), self.loop)
                 elif message.startswith('/'):
                     print(f"Unknown command: '{message}'. Did you mean /menu or /raw?")
                 else:
-                    self.send_message(message)
-
+                    asyncio.run_coroutine_threadsafe(self.send_message(message), self.loop)
         except (KeyboardInterrupt, EOFError):
-            print("\nDisconnecting...")
             self.disconnect()
 
     def start(self):
-        """Starts the IRC client, including server selection and connection."""
         custom_nickname = input(f"Enter your nickname (default: {self.nickname}): ").strip()
         if custom_nickname:
             self.nickname = custom_nickname
+            self.client.nickname = custom_nickname
             
         self.select_server()
         while True:
@@ -219,59 +184,28 @@ class IRCClient:
                 choice = int(input("Enter your choice: "))
                 if 1 <= choice <= len(self.servers):
                     server_info = self.servers[choice - 1]
-                    self.server = server_info["host"]
-                    self.port = server_info["port"]
+                    self.server, self.port = server_info["host"], server_info["port"]
                     break
-            except (ValueError, EOFError):
-                pass
-            print("Invalid choice. Please try again.")
+            except (ValueError, EOFError): pass
+            print("Invalid choice.")
 
         server_info = next((s for s in self.servers if s["host"] == self.server), None)
         ssl_enabled = server_info.get("ssl", False)
         
-        connect_factory = irc.connection.Factory()
-        if ssl_enabled:
-            context = ssl.create_default_context()
-            ssl_wrapper = lambda sock: context.wrap_socket(sock, server_hostname=self.server)
-            connect_factory = irc.connection.Factory(wrapper=ssl_wrapper)
-
-        if self.use_tor:
-            print("Connecting to IRC via Tor...")
-            socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
-            irc.connection.socket = socks.socksocket
-        
-        try:
-            server_instance = self.reactor.server()
-            self.connection = server_instance.connect(
-                server=self.server,
-                port=self.port,
-                nickname=self.nickname,
-                connect_factory=connect_factory
-            )
-        except irc.client.ServerConnectionError as x:
-            print(f"Error connecting to server: {x}")
-            return
-
-        # Add all the event handlers
-        self.connection.add_global_handler("welcome", self.on_welcome, -10)
-        self.connection.add_global_handler("disconnect", self.on_disconnect)
-        self.connection.add_global_handler("nicknameinuse", self.on_nicknameinuse)
-        self.connection.add_global_handler("pubmsg", self.on_pubmsg)
-        self.connection.add_global_handler("list", self.on_list)
-        self.connection.add_global_handler("listend", self.on_listend)
-        
-        # Add handlers for server info and MOTD
-        self.connection.add_global_handler("motd", self.on_server_message)
-        self.connection.add_global_handler("motdstart", self.on_server_message)
-        self.connection.add_global_handler("endofmotd", self.on_endofmotd)
+        proxy = pydle.protocol.SOCKS5Proxy('127.0.0.1', 9050) if self.use_tor else None
         
         input_thread = threading.Thread(target=self.input_loop, daemon=True)
         input_thread.start()
 
+        async def run_client():
+            try:
+                await self.client.connect(
+                    hostname=self.server, port=self.port,
+                    tls=ssl_enabled, tls_verify=False, # tls_verify=False for simplicity
+                    proxy=proxy
+                )
+            except Exception as e:
+                print(f"Failed to connect: {e}")
+        
         print(f"Connecting to {self.server}:{self.port}...")
-        try:
-            self.reactor_running = True
-            self.reactor.process_forever()
-        finally:
-            self.reactor_running = False
-
+        self.loop.run_until_complete(run_client())
