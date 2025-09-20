@@ -157,22 +157,16 @@ class IRCClient:
         ssl_enabled = server_info.get("ssl", False)
         
         # Define connection parameters
-        connect_args = {}
-        sock = socket.socket
-        wrapper = lambda s: s
+        connect_factory = irc.connection.Factory()
+        if ssl_enabled:
+            context = ssl.create_default_context()
+            connect_factory = irc.connection.Factory(wrapper=context.wrap_socket)
 
         if self.use_tor:
             print("Connecting to IRC via Tor...")
-            sock = socks.socksocket
-        
-        if ssl_enabled:
-            context = ssl.create_default_context()
-            wrapper = context.wrap_socket
-
-        connect_args['connect_factory'] = irc.connection.Factory(
-            sock=sock,
-            wrapper=wrapper
-        )
+            socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
+            # The irc library uses the default proxy, so we just need to patch the socket
+            irc.connection.socket = socks.socksocket
         
         try:
             server_instance = self.reactor.server()
@@ -180,7 +174,7 @@ class IRCClient:
                 server=self.server,
                 port=self.port,
                 nickname=self.nickname,
-                **connect_args
+                connect_factory=connect_factory
             )
         except irc.client.ServerConnectionError as x:
             print(f"Error connecting to server: {x}")
