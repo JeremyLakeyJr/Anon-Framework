@@ -50,12 +50,13 @@ class IRCClient:
         if self.channel:
             print(f"Joining channel {self.channel}...")
             connection.join(self.channel)
-        print("\n--- You are now in the channel. Type messages and press Enter to send. ---")
-        print("--- Type /menu to access the options menu. ---")
+        # This will be printed after the MOTD
+        # print("\n--- You are now in the channel. Type messages and press Enter to send. ---")
+        # print("--- Type /menu to access the options menu. ---")
 
     def on_disconnect(self, connection, event):
         """Called when disconnected from the server."""
-        print(f"Disconnected from server: {event.arguments[0]}")
+        print(f"\nDisconnected from server: {event.arguments[0]}")
         self.is_connected = False
         # This will stop the reactor.process_forever() loop
         self.reactor.disconnect_all()
@@ -78,11 +79,20 @@ class IRCClient:
             sys.stdout.write(f"[{self.channel or ''}]> ")
             sys.stdout.flush()
 
+    def on_server_message(self, connection, event):
+        """Prints generic server messages, like the MOTD."""
+        if event.arguments:
+            # The second argument is usually the text content.
+            print(f"[Server] {event.arguments[-1]}")
+
+    def on_endofmotd(self, connection, event):
+        """Called when the MOTD has been fully received."""
+        print("\n--- You are now in the channel. Type messages and press Enter to send. ---")
+        print("--- Type /menu to access the options menu. ---")
+
 
     def on_list(self, connection, event):
         """Called for each item in a channel list."""
-        # The arguments list from the server can vary, especially if a topic is not set.
-        # Format is typically: ['<nickname>', '<channel>', '<user_count>', '<topic>']
         args = event.arguments
         channel = args[1] if len(args) > 1 else "Unknown Channel"
         users = args[2] if len(args) > 2 else "N/A"
@@ -117,7 +127,6 @@ class IRCClient:
         if self.is_connected:
             self.is_connected = False
             self.connection.disconnect("User disconnected.")
-            # Give the disconnect message a moment to be sent
             self.reactor.process_once(0.1)
 
     def join_channel(self, channel):
@@ -150,7 +159,6 @@ class IRCClient:
 
     def input_loop(self):
         """The main loop for handling user input."""
-        # Wait until the connection is established before starting.
         while not self.is_connected:
             threading.Event().wait(0.5)
             if not self.reactor_running:
@@ -165,12 +173,10 @@ class IRCClient:
                     break
 
                 if message == '/menu':
-                    self.menu.current_menu = "main"  # Reset to main menu
-                    # Start a loop to handle menu navigation
+                    self.menu.current_menu = "main"
                     while self.is_connected:
                         self.menu.display_menu()
                         choice = input("Enter your choice: ")
-                        # handle_choice will return False when the user wants to exit the menu
                         if not self.menu.handle_choice(choice):
                             print("\n--- Exited menu. You are back in the channel. ---")
                             break
@@ -205,18 +211,15 @@ class IRCClient:
         server_info = next((s for s in self.servers if s["host"] == self.server), None)
         ssl_enabled = server_info.get("ssl", False)
         
-        # Define connection parameters
         connect_factory = irc.connection.Factory()
         if ssl_enabled:
             context = ssl.create_default_context()
-            # This lambda function ensures the server_hostname is passed for verification
             ssl_wrapper = lambda sock: context.wrap_socket(sock, server_hostname=self.server)
             connect_factory = irc.connection.Factory(wrapper=ssl_wrapper)
 
         if self.use_tor:
             print("Connecting to IRC via Tor...")
             socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
-            # The irc library uses the default proxy, so we just need to patch the socket
             irc.connection.socket = socks.socksocket
         
         try:
@@ -239,7 +242,11 @@ class IRCClient:
         self.connection.add_global_handler("list", self.on_list)
         self.connection.add_global_handler("listend", self.on_listend)
         
-        # Start the input loop in a separate thread
+        # Add handlers for server info and MOTD
+        self.connection.add_global_handler("motd", self.on_server_message)
+        self.connection.add_global_handler("motdstart", self.on_server_message)
+        self.connection.add_global_handler("endofmotd", self.on_endofmotd)
+        
         input_thread = threading.Thread(target=self.input_loop, daemon=True)
         input_thread.start()
 
