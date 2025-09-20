@@ -103,6 +103,14 @@ class IRCClient:
         """Called when the channel list is complete."""
         print("--- End of channel list ---")
 
+    def send_raw_command(self, command):
+        """Sends a raw command string to the server."""
+        if self.is_connected:
+            print(f"--> {command}")
+            self.connection.send_raw(command)
+        else:
+            print("You are not connected to a server.")
+
     def send_message(self, message):
         """Sends a message to the current channel."""
         if self.is_connected and self.channel:
@@ -180,8 +188,11 @@ class IRCClient:
                         if not self.menu.handle_choice(choice):
                             print("\n--- Exited menu. You are back in the channel. ---")
                             break
+                elif message.startswith('/raw '):
+                    command = message.split(' ', 1)[1]
+                    self.send_raw_command(command)
                 elif message.startswith('/'):
-                    print(f"Unknown command: '{message}'. Did you mean /menu?")
+                    print(f"Unknown command: '{message}'. Did you mean /menu or /raw?")
                 else:
                     self.send_message(message)
 
