@@ -44,6 +44,11 @@ class IRCClient(pydle.Client):
         self.servers = SERVERS
         self.is_connected = False
         self.identities = {}
+        
+        # Set encoding properties correctly on initialization.
+        self.encoding = 'utf-8'
+        self._fallback_encodings = ['latin-1', 'cp1252']
+
 
     async def on_connect(self):
         """Called when the client has successfully connected to the server."""
@@ -204,9 +209,7 @@ class IRCClient(pydle.Client):
                 port=port,
                 tls=ssl,
                 proxy=proxy,
-                tls_verify=False, # For simplicity
-                encoding='utf-8',
-                fallback_encodings=['latin-1', 'cp1252']
+                tls_verify=False # For simplicity
             )
             await self.run_forever()
         except Exception as e:
