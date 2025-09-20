@@ -9,17 +9,18 @@ import socket
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
 
+class RobustBuffer(irc.client.LineBuffer):
+    """A line buffer that replaces decoding errors instead of crashing."""
+    def __init__(self, *args, **kwargs):
+        # Force 'replace' as the error handling strategy upon initialization.
+        kwargs['errors'] = 'replace'
+        super().__init__(*args, **kwargs)
+
 class CustomServerConnection(irc.client.ServerConnection):
     """
-    A custom server connection class that modifies the buffer's error
-    handling to prevent crashes on Unicode decode errors.
+    A server connection that uses our RobustBuffer to handle decoding errors.
     """
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # The buffer object is created in the superclass constructor.
-        # We modify its error handling policy from 'strict' to 'replace'
-        # to prevent crashes on invalid byte sequences.
-        self.buffer.errors = 'replace'
+    buffer_class = RobustBuffer
 
 class IRCClient:
     """
