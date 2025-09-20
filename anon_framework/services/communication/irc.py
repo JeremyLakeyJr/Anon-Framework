@@ -20,13 +20,14 @@ class IRCClient(pydle.Client):
     asynchronous, and robust communication.
     """
     def __init__(self, nickname, channel, use_tor=False):
-        # We need to manually construct the feature list to include our patch.
-        features = pydle.features.FeatureSet(
+        # We pass the feature classes directly to the constructor.
+        # This is more robust across different pydle versions.
+        feature_list = [
             pydle.features.rfc1459.RFC1459Support,
             pydle.features.ctcp.CTCPSupport,
             PatchedTLSSupport  # Use our patched TLS class
-        )
-        super().__init__(nickname, realname='Anon-Framework User', features=features)
+        ]
+        super().__init__(nickname, realname='Anon-Framework User', features=feature_list)
         
         self.target_channel = channel
         self.use_tor = use_tor
