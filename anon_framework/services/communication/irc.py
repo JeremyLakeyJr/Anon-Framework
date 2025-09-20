@@ -83,10 +83,7 @@ class IRCClient(pydle.Client):
         """Called when the client disconnects from the server."""
         print("\nDisconnected from server.")
         self.is_connected = False
-        # Use get_running_loop() for safety as self.loop might not be set.
-        loop = asyncio.get_running_loop()
-        if not loop.is_closed():
-             loop.stop()
+
 
     def send_message(self, message):
         """Sends a message to the current channel, scheduled on the event loop."""
@@ -163,10 +160,7 @@ class IRCClient(pydle.Client):
         except (EOFError, KeyboardInterrupt):
             print("\nDisconnecting...")
             self.disconnect()
-        finally:
-            loop = asyncio.get_running_loop()
-            if not loop.is_closed():
-                loop.stop()
+        
 
     async def start(self):
         """Configures and starts the IRC client."""
@@ -211,18 +205,14 @@ class IRCClient(pydle.Client):
                 proxy=proxy,
                 tls_verify=False # For simplicity
             )
-            await self.run_forever()
+            # Use handle_forever() to process messages until disconnection.
+            await self.handle_forever()
         except Exception as e:
             print(f"Failed to connect: {e}")
             print("\n--- DETAILED ERROR ---")
             traceback.print_exc()
             print("----------------------\n")
         finally:
-            try:
-                loop = asyncio.get_running_loop()
-                if not loop.is_closed():
-                    loop.stop()
-            except RuntimeError:
-                # This can happen if the loop is already stopped.
-                pass
+            # The loop is managed by asyncio.run(), so we don't need to stop it manually.
+            pass
 
