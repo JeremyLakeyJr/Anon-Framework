@@ -92,7 +92,8 @@ def handle_communicate_command(args):
     if args.protocol == 'irc':
         client = IRCClient(args.nickname, args.channel, use_tor=args.tor)
         try:
-            client.start()
+            # Use asyncio.run() to properly execute the async start method.
+            asyncio.run(client.start())
         except KeyboardInterrupt:
             print("\nClient shut down by user.")
     else:
@@ -137,3 +138,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
