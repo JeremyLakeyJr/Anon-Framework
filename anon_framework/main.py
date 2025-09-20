@@ -1,5 +1,6 @@
 import argparse
 import sys
+import asyncio
 from anon_framework.vpn.nord import NordVPN
 from anon_framework.vpn.mullvad import MullvadVPN
 from anon_framework.vpn.tor import TorVPN
@@ -90,7 +91,10 @@ def handle_communicate_command(args):
     """Handles all communication-related commands."""
     if args.protocol == 'irc':
         client = IRCClient(args.nickname, args.channel, use_tor=args.tor)
-        client.start()
+        try:
+            client.start()
+        except KeyboardInterrupt:
+            print("\nClient shut down by user.")
     else:
         print(f"Error: Invalid communication protocol '{args.protocol}'.")
         sys.exit(1)
