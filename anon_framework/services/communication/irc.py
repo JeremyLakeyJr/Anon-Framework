@@ -5,18 +5,25 @@ import ssl
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
 import pydle
+from pydle.features.tls import TLSSupport
 
 # This is a workaround for a bug in pydle where TLS and proxy arguments conflict.
-# We create a patched version of the TLS feature that handles proxying correctly.
-class PatchedTLSSupport(pydle.features.tls.TLSSupport):
-    async def _connect_tls(self, hostname, port, tls_verify=True, **kwargs):
-        # Pop the proxy argument so it's not passed to asyncio.open_connection
-        kwargs.pop('proxy', None)
-        return await super()._connect_tls(hostname, port, tls_verify=tls_verify, **kwargs)
+# We are "monkey-patching" the library by replacing the original problematic
+# method with our corrected version before the client starts.
+_original_connect_tls = TLSSupport._connect_tls
 
-# By inheriting from pydle's BasicClient and our patched TLS class,
-# we can avoid Method Resolution Order (MRO) errors.
-class IRCClient(pydle.BasicClient, PatchedTLSSupport):
+async def _patched_connect_tls(self, hostname, port, tls_verify=True, **kwargs):
+    """A patched version that removes the conflicting 'proxy' argument."""
+    kwargs.pop('proxy', None)
+    return await _original_connect_tls(self, hostname, port, tls_verify=tls_verify, **kwargs)
+
+# Apply the patch
+TLSSupport._connect_tls = _patched_connect_tls
+
+
+# By patching the library, we can now inherit from the standard pydle.Client
+# without causing a Method Resolution Order (MRO) error.
+class IRCClient(pydle.Client):
     """
     An IRC client rebuilt using the 'pydle' library for modern,
     asynchronous, and robust communication.
