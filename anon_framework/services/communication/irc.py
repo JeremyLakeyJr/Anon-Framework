@@ -5,6 +5,7 @@ import threading
 import sys
 import ssl
 import socks
+import socket
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
 
@@ -152,22 +153,34 @@ class IRCClient:
                 pass
             print("Invalid choice. Please try again.")
 
-        if self.use_tor:
-            print("Connecting to IRC via Tor...")
-            socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
-            # The irc library respects the default proxy
-            socket.socket = socks.socksocket
-
         server_info = next((s for s in self.servers if s["host"] == self.server), None)
         ssl_enabled = server_info.get("ssl", False)
         
+        # Define connection parameters
+        connect_args = {}
+        sock = socket.socket
+        wrapper = lambda s: s
+
+        if self.use_tor:
+            print("Connecting to IRC via Tor...")
+            sock = socks.socksocket
+        
+        if ssl_enabled:
+            context = ssl.create_default_context()
+            wrapper = context.wrap_socket
+
+        connect_args['connect_factory'] = irc.connection.Factory(
+            sock=sock,
+            wrapper=wrapper
+        )
+        
         try:
-            server = self.reactor.server()
-            self.connection = server.connect(
+            server_instance = self.reactor.server()
+            self.connection = server_instance.connect(
                 server=self.server,
                 port=self.port,
                 nickname=self.nickname,
-                ssl=ssl_enabled
+                **connect_args
             )
         except irc.client.ServerConnectionError as x:
             print(f"Error connecting to server: {x}")
