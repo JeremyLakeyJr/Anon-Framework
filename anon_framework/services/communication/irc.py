@@ -14,9 +14,9 @@ class PatchedTLSSupport(pydle.features.tls.TLSSupport):
         kwargs.pop('proxy', None)
         return await super()._connect_tls(hostname, port, tls_verify=tls_verify, **kwargs)
 
-# By inheriting from our patched class and the other features, we compose the client.
-# This is the correct way to add features in pydle.
-class IRCClient(PatchedTLSSupport, pydle.features.ctcp.CTCPSupport, pydle.features.rfc1459.RFC1459Support, pydle.Client):
+# By inheriting from pydle's BasicClient and our patched TLS class,
+# we can avoid Method Resolution Order (MRO) errors.
+class IRCClient(pydle.BasicClient, PatchedTLSSupport):
     """
     An IRC client rebuilt using the 'pydle' library for modern,
     asynchronous, and robust communication.
