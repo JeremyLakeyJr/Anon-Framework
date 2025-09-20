@@ -2,15 +2,17 @@ import socket
 import socks
 import threading
 import sys
+import ssl
 from .menu import Menu
+from anon_framework.config.servers import SERVERS
 
 class IRCClient:
     """
     A basic IRC client with optional Tor support.
     """
-    def __init__(self, server, port, nickname, channel, use_tor=False):
-        self.server = server
-        self.port = port
+    def __init__(self, nickname, channel, use_tor=False):
+        self.server = None
+        self.port = None
         self.nickname = nickname
         self.channel = channel
         self.use_tor = use_tor
@@ -20,6 +22,15 @@ class IRCClient:
         self.lock = threading.Lock()
         self.menu = Menu(self)
         self.receive_thread = None
+        self.servers = SERVERS
+
+    def select_server(self):
+        """
+        Prompts the user to select a server from the list.
+        """
+        print("Please select a server to connect to:")
+        for i, server in enumerate(self.servers):
+            print(f"{i+1}. {server['name']} ({server['host']}:{server['port']})")
 
     def connect(self):
         """
@@ -33,6 +44,10 @@ class IRCClient:
             else:
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             
+            server_info = next((s for s in self.servers if s["host"] == self.server), None)
+            if server_info and server_info.get("ssl"):
+                self.socket = ssl.wrap_socket(self.socket)
+
             self.socket.connect((self.server, self.port))
             self.is_connected = True
             self.send_command(f"NICK {self.nickname}")
@@ -166,6 +181,18 @@ class IRCClient:
         Starts the main message parsing loop.
         """
         if not self.is_connected:
+            self.select_server()
+            while True:
+                try:
+                    choice = int(input("Enter your choice: "))
+                    if 1 <= choice <= len(self.servers):
+                        server = self.servers[choice-1]
+                        self.server = server["host"]
+                        self.port = server["port"]
+                        break
+                except (ValueError, EOFError):
+                    pass
+                print("Invalid choice. Please try again.")
             self.connect()
 
         try:

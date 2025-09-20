@@ -89,7 +89,7 @@ def handle_privacy_command(args):
 def handle_communicate_command(args):
     """Handles all communication-related commands."""
     if args.protocol == 'irc':
-        client = IRCClient(args.server, args.port, args.nickname, args.channel, use_tor=args.tor)
+        client = IRCClient(args.nickname, args.channel, use_tor=args.tor)
         client.start()
     else:
         print(f"Error: Invalid communication protocol '{args.protocol}'.")
@@ -123,8 +123,6 @@ def main():
     # Communication Parser
     communicate_parser = subparsers.add_parser('communicate', help='Manage communication clients')
     communicate_parser.add_argument('protocol', choices=['irc'], help='The communication protocol')
-    communicate_parser.add_argument('--server', default='irc.libera.chat', help='The server address')
-    communicate_parser.add_argument('--port', type=int, default=6667, help='The server port')
     communicate_parser.add_argument('--nickname', default='anon_framework_user', help='Your nickname')
     communicate_parser.add_argument('--channel', default='#anon-framework', help='The channel to join')
     communicate_parser.add_argument('--tor', action='store_true', help='Use Tor for the connection')
