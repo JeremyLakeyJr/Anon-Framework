@@ -1,9 +1,18 @@
 import asyncio
 import sys
 import threading
+import ssl
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
 import pydle
+
+# This is a workaround for a bug in pydle where TLS and proxy arguments conflict.
+# We create a patched version of the TLS feature that handles proxying correctly.
+class PatchedTLSSupport(pydle.features.tls.TLSSupport):
+    async def _connect_tls(self, hostname, port, tls_verify=True, **kwargs):
+        # Pop the proxy argument so it's not passed to asyncio.open_connection
+        kwargs.pop('proxy', None)
+        return await super()._connect_tls(hostname, port, tls_verify=tls_verify, **kwargs)
 
 class IRCClient(pydle.Client):
     """
@@ -11,7 +20,14 @@ class IRCClient(pydle.Client):
     asynchronous, and robust communication.
     """
     def __init__(self, nickname, channel, use_tor=False):
-        super().__init__(nickname, realname='Anon-Framework User')
+        # We need to manually construct the feature list to include our patch.
+        features = pydle.FeatureSet(
+            pydle.features.rfc1459.RFC1459Support,
+            pydle.features.ctcp.CTCPSupport,
+            PatchedTLSSupport  # Use our patched TLS class
+        )
+        super().__init__(nickname, realname='Anon-Framework User', features=features)
+        
         self.target_channel = channel
         self.use_tor = use_tor
         self.menu = Menu(self)
@@ -52,14 +68,13 @@ class IRCClient(pydle.Client):
         """Called when the client disconnects from the server."""
         print("\nDisconnected from server.")
         self.is_connected = False
-        # To ensure the input loop also exits
-        if not self.event_loop.is_closed():
-             self.event_loop.stop()
+        if not self.loop.is_closed():
+             self.loop.stop()
 
     def send_message(self, message):
         """Sends a message to the current channel, scheduled on the event loop."""
         if self.is_connected and self.target_channel:
-            asyncio.run_coroutine_threadsafe(self.message(self.target_channel, message), self.event_loop)
+            asyncio.run_coroutine_threadsafe(self.message(self.target_channel, message), self.loop)
         else:
             print("You are not in a channel.")
 
@@ -67,13 +82,11 @@ class IRCClient(pydle.Client):
         """Sends a raw command, scheduled on the event loop."""
         if self.is_connected:
             print(f"--> {command} {' '.join(args)}")
-            asyncio.run_coroutine_threadsafe(self.raw(command, *args), self.event_loop)
+            asyncio.run_coroutine_threadsafe(self.raw(command, *args), self.loop)
         else:
             print("You are not connected to a server.")
 
     def list_channels(self):
-        # This functionality is more complex in pydle and requires handling raw numerics.
-        # For now, we'll send the raw command.
         print("Requesting channel list...")
         self.send_raw_command("LIST")
 
@@ -86,20 +99,20 @@ class IRCClient(pydle.Client):
             channel = "#" + channel
         self.target_channel = channel
         print(f"Joining {channel}...")
-        asyncio.run_coroutine_threadsafe(self.join(channel), self.event_loop)
+        asyncio.run_coroutine_threadsafe(self.join(channel), self.loop)
 
     def leave_channel(self):
         if self.target_channel:
             print(f"Leaving {self.target_channel}...")
-            asyncio.run_coroutine_threadsafe(self.part(self.target_channel), self.event_loop)
+            asyncio.run_coroutine_threadsafe(self.part(self.target_channel), self.loop)
             self.target_channel = None
 
     def change_nickname(self, nickname):
-        asyncio.run_coroutine_threadsafe(self.set_nickname(nickname), self.event_loop)
+        asyncio.run_coroutine_threadsafe(self.set_nickname(nickname), self.loop)
 
     def disconnect(self):
         """Schedules the disconnection on the event loop."""
-        asyncio.run_coroutine_threadsafe(super().disconnect(), self.event_loop)
+        asyncio.run_coroutine_threadsafe(super().disconnect(), self.loop)
 
     def input_loop(self):
         """The main loop for handling user input, run in a separate thread."""
@@ -134,14 +147,14 @@ class IRCClient(pydle.Client):
             print("\nDisconnecting...")
             self.disconnect()
         finally:
-            if not self.event_loop.is_closed():
-                self.event_loop.stop()
+            if not self.loop.is_closed():
+                self.loop.stop()
 
     async def start(self):
         """Configures and starts the IRC client."""
         custom_nickname = input(f"Enter your nickname (default: {self.nickname}): ").strip()
         if custom_nickname:
-            self.nickname = custom_nickname
+            await self.set_nickname(custom_nickname)
 
         print("Please select a server to connect to:")
         for i, server in enumerate(self.servers):
@@ -167,8 +180,6 @@ class IRCClient(pydle.Client):
             print("Configuring connection via Tor...")
             proxy = pydle.protocol.SOCKS5Proxy('127.0.0.1', 9050)
 
-        # pydle uses its own event loop.
-        # We run our blocking input() in a separate thread.
         input_thread = threading.Thread(target=self.input_loop, daemon=True)
         input_thread.start()
 
@@ -179,12 +190,14 @@ class IRCClient(pydle.Client):
                 port=port,
                 tls=ssl,
                 proxy=proxy,
-                # pydle has better encoding detection, but we can set fallbacks.
+                tls_verify=False, # For simplicity
                 encoding='utf-8',
                 fallback_encodings=['latin-1', 'cp1252']
             )
+            await self.run_forever()
         except Exception as e:
             print(f"Failed to connect: {e}")
-            if not self.event_loop.is_closed():
-                self.event_loop.stop()
+        finally:
+            if not self.loop.is_closed():
+                self.loop.stop()
 
