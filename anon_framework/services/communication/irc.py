@@ -205,13 +205,13 @@ class IRCClient:
             irc.connection.socket = socks.socksocket
         
         try:
-            server_instance = self.reactor.server()
+            # Pass encoding parameters when creating the server instance
+            server_instance = self.reactor.server(fallback_encoding='latin-1')
             self.connection = server_instance.connect(
                 server=self.server,
                 port=self.port,
                 nickname=self.nickname,
-                connect_factory=connect_factory,
-                fallback_encoding='latin-1'
+                connect_factory=connect_factory
             )
         except irc.client.ServerConnectionError as x:
             print(f"Error connecting to server: {x}")
