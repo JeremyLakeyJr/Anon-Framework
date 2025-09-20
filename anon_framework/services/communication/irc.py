@@ -46,7 +46,9 @@ class IRCClient:
             
             server_info = next((s for s in self.servers if s["host"] == self.server), None)
             if server_info and server_info.get("ssl"):
-                self.socket = ssl.wrap_socket(self.socket)
+                # Create an SSL context and wrap the socket
+                context = ssl.create_default_context()
+                self.socket = context.wrap_socket(self.socket, server_hostname=self.server)
 
             self.socket.connect((self.server, self.port))
             self.is_connected = True
