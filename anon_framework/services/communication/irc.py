@@ -12,14 +12,17 @@ from anon_framework.config.servers import SERVERS
 class CustomServerConnection(irc.client.ServerConnection):
     """
     A custom server connection class that modifies the buffer's error
-    handling to prevent crashes on Unicode decode errors.
+    handling and default encoding to prevent crashes on Unicode decode errors.
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # The buffer object is created in the superclass constructor.
-        # We directly modify its error handling policy from 'strict' to 'replace'
-        # to prevent crashes on invalid byte sequences. This is the most
-        # direct and reliable method to solve the UnicodeDecodeError.
+        # Forcibly change the encoding to a fallback that won't crash on
+        # invalid byte sequences. latin-1 can represent any byte value,
+        # prioritizing stability over perfect character representation.
+        self.buffer.encoding = 'latin-1'
+        # Set the error handling policy to 'replace' as a secondary measure,
+        # which will insert a placeholder for any character that still
+        # can't be rendered.
         self.buffer.errors = 'replace'
 
 class IRCClient:
