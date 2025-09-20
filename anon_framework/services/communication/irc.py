@@ -164,7 +164,8 @@ class IRCClient:
         """Receives and prints messages from the server."""
         while self.is_connected:
             try:
-                response = self.socket.recv(2048).decode("utf-8")
+                # Decode with error handling to prevent crashes on invalid byte sequences
+                response = self.socket.recv(2048).decode("utf-8", errors="replace")
                 if response:
                     with self.lock:
                         sys.stdout.write(response)
@@ -227,3 +228,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
