@@ -1,6 +1,7 @@
 import irc.client
 import irc.connection
 import irc.strings
+import irc.buffer
 import threading
 import sys
 import ssl
@@ -8,6 +9,17 @@ import socks
 import socket
 from .menu import Menu
 from anon_framework.config.servers import SERVERS
+
+class CustomServerConnection(irc.client.ServerConnection):
+    """
+    A custom server connection class that uses a robust buffer to prevent
+    crashing on Unicode decode errors.
+    """
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Replace the default buffer with one that replaces invalid characters
+        # instead of raising an error.
+        self.buffer_class = irc.buffer.LenientLineBuffer
 
 class IRCClient:
     """
@@ -25,6 +37,8 @@ class IRCClient:
         self.identities = {}
         
         self.reactor = irc.client.Reactor()
+        # Use our custom connection class
+        self.reactor.server_class = CustomServerConnection
         self.connection = None
         self.reactor_running = False
 
@@ -200,13 +214,12 @@ class IRCClient:
 
         if self.use_tor:
             print("Connecting to IRC via Tor...")
-            socks.set_default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
+            socks.set__default_proxy(socks.SOCKS5, "127.0.0.1", 9050)
             # The irc library uses the default proxy, so we just need to patch the socket
             irc.connection.socket = socks.socksocket
         
         try:
-            # Pass encoding parameters when creating the server instance
-            server_instance = self.reactor.server(fallback_encoding='latin-1')
+            server_instance = self.reactor.server()
             self.connection = server_instance.connect(
                 server=self.server,
                 port=self.port,
