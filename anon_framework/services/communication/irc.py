@@ -58,7 +58,9 @@ class IRCClient(pydle.Client):
     async def on_unknown(self, message):
         """Called for any server message that doesn't have a specific handler."""
         # This prevents raw numerics from looking like an error.
-        print(f"[Server] {message.raw}")
+        # The `message` object may not have a `.raw` attribute, so we
+        # convert it to a string for a safe, generic representation.
+        print(f"[Server] {str(message)}")
 
     async def on_connect(self):
         """Called when the client has successfully connected to the server."""
