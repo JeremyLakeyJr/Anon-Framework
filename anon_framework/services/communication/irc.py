@@ -14,8 +14,13 @@ from pydle.features.tls import TLSSupport
 _original_connect = TLSSupport._connect
 
 async def _patched_connect(self, hostname, port, **kwargs):
-    """A patched version that removes the conflicting 'proxy' argument for TLS connections."""
-    if self.tls:
+    """
+    A patched version that checks the kwargs for TLS status and removes the
+    conflicting 'proxy' argument for TLS connections.
+    """
+    # The 'tls' flag is passed in kwargs, not set as a property on `self`
+    # at this stage of the connection.
+    if kwargs.get('tls'):
         kwargs.pop('proxy', None)
     return await _original_connect(self, hostname, port, **kwargs)
 
