@@ -35,6 +35,8 @@ class IRCClient:
         if self.channel:
             print(f"Joining channel {self.channel}...")
             connection.join(self.channel)
+        print("\n--- You are now in the channel. Type messages and press Enter to send. ---")
+        print("--- Type /menu to access the options menu. ---")
 
     def on_disconnect(self, connection, event):
         """Called when disconnected from the server."""
@@ -54,11 +56,23 @@ class IRCClient:
         """Called on a public message in a channel."""
         # We don't want to print our own messages back to ourselves.
         if not irc.strings.are_equal(event.source.nick, connection.get_nickname()):
+            # Use carriage return to overwrite the current input line
+            sys.stdout.write('\r' + ' ' * 80 + '\r') 
             print(f"<{event.source.nick}> {event.arguments[0]}")
+            # Reprint the input prompt
+            sys.stdout.write(f"[{self.channel or ''}]> ")
+            sys.stdout.flush()
+
 
     def on_list(self, connection, event):
         """Called for each item in a channel list."""
-        print(f"Channel: {event.arguments[1]}, Users: {event.arguments[2]}, Topic: {event.arguments[3]}")
+        # The arguments list from the server can vary, especially if a topic is not set.
+        # Format is typically: ['<nickname>', '<channel>', '<user_count>', '<topic>']
+        args = event.arguments
+        channel = args[1] if len(args) > 1 else "Unknown Channel"
+        users = args[2] if len(args) > 2 else "N/A"
+        topic = args[3] if len(args) > 3 else ""
+        print(f"Channel: {channel}, Users: {users}, Topic: {topic}")
 
     def on_listend(self, connection, event):
         """Called when the channel list is complete."""
@@ -66,10 +80,10 @@ class IRCClient:
 
     def send_message(self, message):
         """Sends a message to the current channel."""
-        if self.is_connected:
+        if self.is_connected and self.channel:
             self.connection.privmsg(self.channel, message)
-            # Print our own message to the console for a better user experience.
-            print(f"<{self.connection.get_nickname()}> {message}")
+        else:
+            print("You are not in a channel. Use the menu to join one.")
 
     def list_channels(self):
         """Requests a list of all channels from the server."""
@@ -119,22 +133,33 @@ class IRCClient:
         for i, server in enumerate(self.servers):
             print(f"{i+1}. {server['name']} ({server['host']}:{server['port']})")
 
-    def menu_loop(self):
-        """The main loop for handling user input from the menu."""
-        # Wait until the connection is established before showing the menu.
+    def input_loop(self):
+        """The main loop for handling user input."""
+        # Wait until the connection is established before starting.
         while not self.is_connected:
             threading.Event().wait(0.5)
-            # If the reactor stops before connecting, exit the loop.
             if not self.reactor_running:
                 return
 
         try:
             while self.is_connected:
-                self.menu.display_menu()
-                choice = input("Enter your choice: ")
+                prompt = f"[{self.channel or 'No Channel'}]> "
+                message = input(prompt)
+                
                 if not self.is_connected:
                     break
-                self.menu.handle_choice(choice)
+
+                if message == '/menu':
+                    self.menu.display_menu()
+                    choice = input("Enter your choice: ")
+                    self.menu.handle_choice(choice)
+                    # After menu interaction, reset the current menu to main
+                    self.menu.current_menu = "main"
+                elif message.startswith('/'):
+                    print(f"Unknown command: '{message}'. Did you mean /menu?")
+                else:
+                    self.send_message(message)
+
         except (KeyboardInterrupt, EOFError):
             print("\nDisconnecting...")
             self.disconnect()
@@ -191,9 +216,9 @@ class IRCClient:
         self.connection.add_global_handler("list", self.on_list)
         self.connection.add_global_handler("listend", self.on_listend)
         
-        # Start the menu in a separate thread so it doesn't block the IRC client
-        menu_thread = threading.Thread(target=self.menu_loop, daemon=True)
-        menu_thread.start()
+        # Start the input loop in a separate thread
+        input_thread = threading.Thread(target=self.input_loop, daemon=True)
+        input_thread.start()
 
         print(f"Connecting to {self.server}:{self.port}...")
         try:
