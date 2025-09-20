@@ -18,11 +18,17 @@ async def _patched_connect(self, hostname, port, **kwargs):
     A patched version that checks the kwargs for TLS status and removes the
     conflicting 'proxy' argument for TLS connections.
     """
+    print("[Debug] Entering patched connect method...")
     # The 'tls' flag is passed in kwargs, not set as a property on `self`
     # at this stage of the connection.
     if kwargs.get('tls'):
+        print("[Debug] TLS connection detected, removing proxy from kwargs for TLS layer.")
         kwargs.pop('proxy', None)
-    return await _original_connect(self, hostname, port, **kwargs)
+    
+    print("[Debug] Calling original connect method...")
+    result = await _original_connect(self, hostname, port, **kwargs)
+    print("[Debug] Original connect method returned.")
+    return result
 
 # Apply the patch
 TLSSupport._connect = _patched_connect
@@ -206,6 +212,7 @@ class IRCClient(pydle.Client):
 
         print(f"Connecting to {host}:{port}...")
         try:
+            print("[Debug] About to await self.connect...")
             await self.connect(
                 hostname=host,
                 port=port,
@@ -213,9 +220,11 @@ class IRCClient(pydle.Client):
                 proxy=proxy,
                 tls_verify=False # For simplicity
             )
+            print("[Debug] self.connect returned. Awaiting disconnection event...")
             # The library handles message processing in the background.
             # We just need to wait for our disconnection event to be set.
             await self._disconnected_event.wait()
+            print("[Debug] Disconnection event received.")
         except Exception as e:
             print(f"Failed to connect: {e}")
             print("\n--- DETAILED ERROR ---")
