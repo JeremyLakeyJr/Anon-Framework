@@ -153,9 +153,10 @@ class IRCClient(pydle.Client):
 
     async def start(self):
         """Configures and starts the IRC client."""
-        custom_nickname = input(f"Enter your nickname (default: {self.nickname}): ").strip()
+        default_nickname = self.nickname or 'anon_framework_user'
+        custom_nickname = input(f"Enter your nickname (default: {default_nickname}): ").strip()
         if custom_nickname:
-            await self.set_nickname(custom_nickname)
+            self.nickname = custom_nickname
 
         print("Please select a server to connect to:")
         for i, server in enumerate(self.servers):
