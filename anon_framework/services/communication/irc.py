@@ -81,6 +81,7 @@ class IRCClient(pydle.Client):
 
     async def on_disconnect(self, expected):
         """Called when the client disconnects from the server."""
+        await super().on_disconnect(expected)
         print("\nDisconnected from server.")
         self.is_connected = False
 
@@ -205,8 +206,9 @@ class IRCClient(pydle.Client):
                 proxy=proxy,
                 tls_verify=False # For simplicity
             )
-            # Use handle_forever() to process messages until disconnection.
-            await self.handle_forever()
+            # The library handles message processing in the background.
+            # We just need to wait for the client to disconnect.
+            await self.disconnected.wait()
         except Exception as e:
             print(f"Failed to connect: {e}")
             print("\n--- DETAILED ERROR ---")
