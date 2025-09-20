@@ -14,20 +14,15 @@ class PatchedTLSSupport(pydle.features.tls.TLSSupport):
         kwargs.pop('proxy', None)
         return await super()._connect_tls(hostname, port, tls_verify=tls_verify, **kwargs)
 
-class IRCClient(pydle.Client):
+# By inheriting from our patched class and the other features, we compose the client.
+# This is the correct way to add features in pydle.
+class IRCClient(PatchedTLSSupport, pydle.features.ctcp.CTCPSupport, pydle.features.rfc1459.RFC1459Support, pydle.Client):
     """
     An IRC client rebuilt using the 'pydle' library for modern,
     asynchronous, and robust communication.
     """
     def __init__(self, nickname, channel, use_tor=False):
-        # We pass the feature classes directly to the constructor.
-        # This is more robust across different pydle versions.
-        feature_list = [
-            pydle.features.rfc1459.RFC1459Support,
-            pydle.features.ctcp.CTCPSupport,
-            PatchedTLSSupport  # Use our patched TLS class
-        ]
-        super().__init__(nickname, realname='Anon-Framework User', features=feature_list)
+        super().__init__(nickname, realname='Anon-Framework User')
         
         self.target_channel = channel
         self.use_tor = use_tor
@@ -69,8 +64,10 @@ class IRCClient(pydle.Client):
         """Called when the client disconnects from the server."""
         print("\nDisconnected from server.")
         self.is_connected = False
-        if not self.loop.is_closed():
-             self.loop.stop()
+        # Use get_running_loop() for safety as self.loop might not be set.
+        loop = asyncio.get_running_loop()
+        if not loop.is_closed():
+             loop.stop()
 
     def send_message(self, message):
         """Sends a message to the current channel, scheduled on the event loop."""
@@ -148,8 +145,9 @@ class IRCClient(pydle.Client):
             print("\nDisconnecting...")
             self.disconnect()
         finally:
-            if not self.loop.is_closed():
-                self.loop.stop()
+            loop = asyncio.get_running_loop()
+            if not loop.is_closed():
+                loop.stop()
 
     async def start(self):
         """Configures and starts the IRC client."""
@@ -200,6 +198,11 @@ class IRCClient(pydle.Client):
         except Exception as e:
             print(f"Failed to connect: {e}")
         finally:
-            if not self.loop.is_closed():
-                self.loop.stop()
+            try:
+                loop = asyncio.get_running_loop()
+                if not loop.is_closed():
+                    loop.stop()
+            except RuntimeError:
+                # This can happen if the loop is already stopped.
+                pass
 
