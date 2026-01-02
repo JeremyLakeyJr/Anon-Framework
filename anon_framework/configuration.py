@@ -147,8 +147,10 @@ class Config:
         if not save_path:
             raise ValueError("No config path specified for saving")
         
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        # Create directory if it doesn't exist and path includes a directory
+        dir_path = os.path.dirname(save_path)
+        if dir_path:
+            os.makedirs(dir_path, exist_ok=True)
         
         with open(save_path, 'w') as f:
             yaml.safe_dump(self.config_data, f, default_flow_style=False)

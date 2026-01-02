@@ -1,6 +1,10 @@
 import sys
 import subprocess
+import re
 from typing import Tuple, List, Optional
+
+# Compile regex pattern for input validation
+_ALLOWED_CHARS_PATTERN = re.compile(r'^[a-zA-Z0-9_\-\.]+$')
 
 
 def get_os() -> str:
@@ -81,8 +85,7 @@ def validate_input(
     # Check character constraints
     if allowed_chars is None:
         # Default: alphanumeric, dash, underscore, and dot
-        import re
-        if not re.match(r'^[a-zA-Z0-9_\-\.]+$', value):
+        if not _ALLOWED_CHARS_PATTERN.match(value):
             return False
     else:
         for char in value:

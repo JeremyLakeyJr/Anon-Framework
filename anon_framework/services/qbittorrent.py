@@ -168,7 +168,7 @@ class QBittorrentClient:
                                 data={'id': job_id},
                                 timeout=self.timeout
                             )
-                        except:
+                        except Exception:
                             pass  # Ignore cleanup errors
                         
                         return result_list
