@@ -10,7 +10,11 @@ setup(
         ],
     },
     install_requires=[
-        'pysocks',
+        'pysocks>=1.7.1',
+        'pydle>=1.0.0',
+        'psutil>=5.9.0',
+        'requests>=2.28.0',
+        'pyyaml>=6.0',
     ],
     python_requires='>=3.6',
     author='Anon-Framework Contributors',
