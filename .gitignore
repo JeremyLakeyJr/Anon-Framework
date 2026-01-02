@@ -120,3 +120,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Anon-Framework specific
+config.yaml
+anon_framework.log
+*.log

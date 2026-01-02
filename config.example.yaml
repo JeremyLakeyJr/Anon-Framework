@@ -1,0 +1,55 @@
+# Example configuration file for Anon-Framework
+# Copy this to config.yaml and customize for your setup
+
+# qBittorrent Web UI Configuration
+qbittorrent:
+  host: localhost
+  port: 8080
+  username: admin
+  password: adminpass  # Change this!
+
+# I2P Configuration
+i2p:
+  service_name: i2p
+  proxy_host: 127.0.0.1
+  proxy_port: 4444
+
+# Tor Configuration
+tor:
+  socks_proxy: 127.0.0.1
+  socks_port: 9050
+  service_name: tor
+
+# IRC Configuration
+irc:
+  default_nickname: anon_user
+  default_channel: "#anon-framework"
+  servers:
+    - name: Libera.Chat
+      host: irc.libera.chat
+      port: 6697
+      ssl: true
+    - name: OFTC
+      host: irc.oftc.net
+      port: 6697
+      ssl: true
+
+# VPN Configuration
+vpn:
+  # Preferred VPN provider (nord, mullvad, tor)
+  preferred_provider: tor
+  # Auto-connect on startup
+  auto_connect: false
+
+# Privacy Settings
+privacy:
+  # Enable automatic telemetry disabling
+  auto_disable_telemetry: false
+  # Enable Tor by default for services that support it
+  prefer_tor: true
+
+# Logging Configuration
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR, CRITICAL
+  file: anon_framework.log
+  console: true
